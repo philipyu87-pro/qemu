@@ -1192,6 +1192,22 @@ static AHCICmdHdr *get_cmd_header(AHCIState *s, uint8_t port, uint8_t slot)
     return s->dev[port].lst ? &((AHCICmdHdr *)s->dev[port].lst)[slot] : NULL;
 }
 
+static bool ahci_ensure_cur_cmd(AHCIDevice *ad)
+{
+    if (!ad->cur_cmd && ad->busy_slot >= 0 && ad->busy_slot < AHCI_MAX_CMDS) {
+        ad->cur_cmd = get_cmd_header(ad->hba, ad->port_no, ad->busy_slot);
+    }
+
+    if (!ad->cur_cmd) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "ahci: missing cur_cmd for port %d slot %d\n",
+                      ad->port_no, ad->busy_slot);
+        return false;
+    }
+
+    return true;
+}
+
 static void handle_reg_h2d_fis(AHCIState *s, int port,
                                uint8_t slot, const uint8_t *cmd_fis)
 {
@@ -1374,6 +1390,11 @@ static void ahci_pio_transfer(const IDEDMA *dma)
     IDEState *s = &ad->port.ifs[0];
     uint32_t size = (uint32_t)(s->data_end - s->data_ptr);
     /* write == ram -> device */
+    if (!ahci_ensure_cur_cmd(ad)) {
+        s->error = ABRT_ERR;
+        s->status = READY_STAT | ERR_STAT;
+        return;
+    }
     uint16_t opts = le16_to_cpu(ad->cur_cmd->opts);
     int is_write = opts & AHCI_CMD_WRITE;
     int is_atapi = opts & AHCI_CMD_ATAPI;
@@ -1469,6 +1490,10 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
     IDEState *s = &ad->port.ifs[0];
 
+    if (!ahci_ensure_cur_cmd(ad)) {
+        return -1;
+    }
+
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd,
                              limit, s->io_buffer_offset) == -1) {
         trace_ahci_dma_prepare_buf_fail(ad->hba, ad->port_no);
@@ -1489,6 +1514,10 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
 {
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
 
+    if (!ahci_ensure_cur_cmd(ad)) {
+        return;
+    }
+
     tx_bytes += le32_to_cpu(ad->cur_cmd->status);
     ad->cur_cmd->status = cpu_to_le32(tx_bytes);
 }
@@ -1499,6 +1528,10 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
     IDEState *s = &ad->port.ifs[0];
     uint8_t *p = s->io_buffer + s->io_buffer_index;
     int l = s->io_buffer_size - s->io_buffer_index;
+
+    if (!ahci_ensure_cur_cmd(ad)) {
+        return 0;
+    }
 
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd, l, s->io_buffer_offset)) {
         return 0;
