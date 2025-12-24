@@ -7,6 +7,12 @@ intended for use when the goal is to update host software components
 that run the VM, such as QEMU or even the host kernel.  At this time,
 the cpr-reboot, cpr-transfer, and cpr-exec modes are available.
 
+The feature provides the paired "cpr-save" / "cpr-load" workflow:
+QEMU stops the VM, checkpoints it locally, and later restarts it on
+the same host without involving a remote peer.  CPR first appeared in
+the QEMU 10.0 release series and continues to cover the save/load
+flows via the modes described below.
+
 Because QEMU is restarted on the same host, with access to the same
 local devices, CPR is allowed in certain cases where normal migration
 would be blocked.  However, the user must not modify the contents of
