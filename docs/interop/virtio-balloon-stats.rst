@@ -109,3 +109,24 @@ Disable polling::
                "property": "stats-polling-interval", "value": 0 } }
 
   { "return": {} }
+
+OOM-related virtio-balloon features
+-----------------------------------
+
+- **autodeflate / deflate-on-oom**: when the device is created with
+  ``deflate-on-oom=on`` (advertising
+  ``VIRTIO_BALLOON_F_DEFLATE_ON_OOM``), the guest balloon driver will
+  automatically deflate the balloon as it enters the OOM path. This lets the
+  guest reclaim memory without relying on QMP commands or the OOM killer,
+  helping workloads survive transient memory pressure.
+
+- **freePageReporting / free-page-reporting**: enabling
+  ``free-page-reporting=on`` (``VIRTIO_BALLOON_F_REPORTING``) adds a reporting
+  virtqueue that streams zeroed free pages back to the host. Reported pages are
+  transient (they can be discarded without an explicit inflate/deflate cycle),
+  which makes the feature useful for overcommit/OOM handling by shrinking the
+  host-visible footprint quickly. For template or shared-file-backed VMs this
+  feature should stay disabled (see ``docs/system/vm-templating.rst``).
+
+中文简述：autodeflate（deflate-on-oom）让客体在触发 OOM 时自动放气；
+freePageReporting（free-page-reporting）通过 reporting 队列上报空闲页，便于 OOM 时宿主快速回收内存。
