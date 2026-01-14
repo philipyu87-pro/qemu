@@ -33,6 +33,7 @@
 #include "qapi/qobject-input-visitor.h"
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
+#include "qemu/main-loop.h"
 #include "qemu/help_option.h"
 #include "qemu/option.h"
 #include "qemu/qemu-print.h"
@@ -650,6 +651,11 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     DeviceState *dev;
     BusState *bus = NULL;
     QDict *properties;
+    bool have_iothread_lock = qemu_mutex_iothread_locked();
+
+    if (!have_iothread_lock) {
+        qemu_mutex_lock_iothread();
+    }
 
     driver = qdict_get_try_str(opts, "driver");
     if (!driver) {
@@ -722,7 +728,7 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     qdict_del(properties, "id");
 
     object_set_properties_from_keyval(&dev->parent_obj, properties, from_json,
-                                      errp);
+                                       errp);
     qobject_unref(properties);
     if (*errp) {
         goto err_del_dev;
@@ -731,13 +737,19 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     if (!qdev_realize(dev, bus, errp)) {
         goto err_del_dev;
     }
-    return dev;
+    goto out;
 
 err_del_dev:
     object_unparent(OBJECT(dev));
     object_unref(OBJECT(dev));
 
-    return NULL;
+    dev = NULL;
+
+out:
+    if (!have_iothread_lock) {
+        qemu_mutex_unlock_iothread();
+    }
+    return dev;
 }
 
 /* Takes ownership of @opts on success */
