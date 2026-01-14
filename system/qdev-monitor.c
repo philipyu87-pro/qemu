@@ -33,7 +33,6 @@
 #include "qapi/qobject-input-visitor.h"
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
-#include "qemu/main-loop.h"
 #include "qemu/help_option.h"
 #include "qemu/option.h"
 #include "qemu/qemu-print.h"
@@ -648,25 +647,20 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     DeviceClass *dc;
     const char *driver, *path;
     char *id;
-    DeviceState *dev = NULL;
+    DeviceState *dev;
     BusState *bus = NULL;
     QDict *properties;
-    bool have_iothread_lock = qemu_mutex_iothread_locked();
-
-    if (!have_iothread_lock) {
-        qemu_mutex_lock_iothread();
-    }
 
     driver = qdict_get_try_str(opts, "driver");
     if (!driver) {
         error_setg(errp, QERR_MISSING_PARAMETER, "driver");
-        goto out;
+        return NULL;
     }
 
     /* find driver */
     dc = qdev_get_device_class(&driver, errp);
     if (!dc) {
-        goto out;
+        return NULL;
     }
 
     /* find bus */
@@ -674,17 +668,17 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     if (path != NULL) {
         bus = qbus_find(path, errp);
         if (!bus) {
-            goto out;
+            return NULL;
         }
         if (!object_dynamic_cast(OBJECT(bus), dc->bus_type)) {
             error_setg(errp, "Device '%s' can't go on %s bus",
                        driver, object_get_typename(OBJECT(bus)));
-            goto out;
+            return NULL;
         }
     } else if (dc->bus_type != NULL) {
         bus = qdev_find_default_bus(dc, errp);
         if (!bus) {
-            goto out;
+            return NULL;
         }
     }
 
@@ -693,14 +687,14 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
             error_setg(errp, "Bus '%s' does not support hotplugging",
                        bus->name);
         }
-        goto out;
+        return NULL;
     } else if (*errp) {
-        goto out;
+        return NULL;
     }
 
     if (migration_is_running()) {
         error_setg(errp, "device_add not allowed while migrating");
-        goto out;
+        return NULL;
     }
 
     /* create device */
@@ -737,19 +731,13 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     if (!qdev_realize(dev, bus, errp)) {
         goto err_del_dev;
     }
-    goto out;
+    return dev;
 
 err_del_dev:
     object_unparent(OBJECT(dev));
     object_unref(OBJECT(dev));
 
-    dev = NULL;
-
-out:
-    if (!have_iothread_lock) {
-        qemu_mutex_unlock_iothread();
-    }
-    return dev;
+    return NULL;
 }
 
 /* Takes ownership of @opts on success */
