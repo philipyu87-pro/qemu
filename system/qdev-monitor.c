@@ -722,7 +722,7 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     qdict_del(properties, "id");
 
     object_set_properties_from_keyval(&dev->parent_obj, properties, from_json,
-                                      errp);
+                                       errp);
     qobject_unref(properties);
     if (*errp) {
         goto err_del_dev;
