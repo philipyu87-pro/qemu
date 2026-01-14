@@ -648,7 +648,7 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     DeviceClass *dc;
     const char *driver, *path;
     char *id;
-    DeviceState *dev;
+    DeviceState *dev = NULL;
     BusState *bus = NULL;
     QDict *properties;
     bool have_iothread_lock = qemu_mutex_iothread_locked();
@@ -660,13 +660,13 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     driver = qdict_get_try_str(opts, "driver");
     if (!driver) {
         error_setg(errp, QERR_MISSING_PARAMETER, "driver");
-        return NULL;
+        goto out;
     }
 
     /* find driver */
     dc = qdev_get_device_class(&driver, errp);
     if (!dc) {
-        return NULL;
+        goto out;
     }
 
     /* find bus */
@@ -674,17 +674,17 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     if (path != NULL) {
         bus = qbus_find(path, errp);
         if (!bus) {
-            return NULL;
+            goto out;
         }
         if (!object_dynamic_cast(OBJECT(bus), dc->bus_type)) {
             error_setg(errp, "Device '%s' can't go on %s bus",
                        driver, object_get_typename(OBJECT(bus)));
-            return NULL;
+            goto out;
         }
     } else if (dc->bus_type != NULL) {
         bus = qdev_find_default_bus(dc, errp);
         if (!bus) {
-            return NULL;
+            goto out;
         }
     }
 
@@ -693,14 +693,14 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
             error_setg(errp, "Bus '%s' does not support hotplugging",
                        bus->name);
         }
-        return NULL;
+        goto out;
     } else if (*errp) {
-        return NULL;
+        goto out;
     }
 
     if (migration_is_running()) {
         error_setg(errp, "device_add not allowed while migrating");
-        return NULL;
+        goto out;
     }
 
     /* create device */
