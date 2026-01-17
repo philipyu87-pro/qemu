@@ -267,8 +267,10 @@ Each vCPU thread follows this execution pattern:
 6. Handle any exceptions or events that occurred
 7. Return to step 2
 
-This pattern is implemented in both MTTCG (``accel/tcg/tcg-accel-ops-mttcg.c``)
-and round-robin TCG (``accel/tcg/tcg-accel-ops-rr.c``) modes.
+This pattern is implemented in both MTTCG (multi-threaded TCG where each vCPU
+runs on its own thread, see ``accel/tcg/tcg-accel-ops-mttcg.c``) and
+round-robin TCG (single-threaded TCG with time-slicing between vCPUs,
+see ``accel/tcg/tcg-accel-ops-rr.c``) modes.
 
 The critical insight is that **guest code execution does not require the BQL**.
 The BQL is only needed when vCPU threads need to access or modify QEMU's
@@ -305,9 +307,9 @@ vCPUs will block waiting for the BQL in these scenarios:
 - When executing special helper functions that need to access QEMU state
 
 To minimize contention, QEMU's design pushes the use of the BQL as far down
-as possible. For example, MMIO operations release and re-acquire the BQL at
-the point where they access device state, allowing other threads to make
-progress.
+as possible. The vCPU execution loop only holds the BQL when necessary,
+releasing it during guest code execution to allow other threads to make
+progress on QEMU internal operations.
 
 Memory Consistency
 ==================
