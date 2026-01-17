@@ -247,6 +247,68 @@ of async_run_on_cpu().
 Updates to interrupt state are also protected by the BQL as they can
 often be cross vCPU.
 
+BQL and vCPU Execution
+----------------------
+
+A common question about the BQL is why long-running operations in the main
+thread (such as QMP commands like ``device_add``) don't block vCPU execution.
+The key to understanding this is the BQL release pattern used by vCPU threads.
+
+vCPU Thread BQL Pattern
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each vCPU thread follows this execution pattern:
+
+1. Hold the BQL initially
+2. Process any pending work items that require the BQL
+3. **Release the BQL before executing guest code**
+4. Execute translated guest code (which doesn't require the BQL)
+5. Re-acquire the BQL after guest code execution completes
+6. Handle any exceptions or events that occurred
+7. Return to step 2
+
+This pattern is implemented in both MTTCG (``accel/tcg/tcg-accel-ops-mttcg.c``)
+and round-robin TCG (``accel/tcg/tcg-accel-ops-rr.c``) modes.
+
+The critical insight is that **guest code execution does not require the BQL**.
+The BQL is only needed when vCPU threads need to access or modify QEMU's
+internal state (such as device state, memory mappings, etc.). The actual
+execution of guest instructions happens outside the BQL.
+
+Impact on Main Thread Operations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a QMP command like ``device_add`` executes in the main thread while
+holding the BQL, vCPUs can continue to run guest code because:
+
+- vCPUs release the BQL before executing guest code
+- Guest code execution proceeds independently of the main thread
+- Only when a vCPU needs to re-acquire the BQL (to handle an interrupt,
+  perform an I/O operation, etc.) will it potentially block waiting for
+  the main thread to release the BQL
+
+This design allows for good vCPU execution performance even when the main
+thread performs long-running operations. However, operations that require
+vCPUs to frequently re-acquire the BQL (such as MMIO-heavy workloads) may
+experience reduced performance if the main thread holds the BQL for extended
+periods.
+
+When vCPUs Must Wait
+~~~~~~~~~~~~~~~~~~~~
+
+vCPUs will block waiting for the BQL in these scenarios:
+
+- After completing a guest code execution cycle, when trying to re-acquire
+  the BQL to process the next iteration
+- When handling interrupts or exceptions that require accessing device state
+- When performing MMIO operations (as these access emulated hardware)
+- When executing special helper functions that need to access QEMU state
+
+To minimize contention, QEMU's design pushes the use of the BQL as far down
+as possible. For example, MMIO operations release and re-acquire the BQL at
+the point where they access device state, allowing other threads to make
+progress.
+
 Memory Consistency
 ==================
 

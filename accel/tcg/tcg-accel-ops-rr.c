@@ -278,6 +278,14 @@ static void *rr_cpu_thread_fn(void *arg)
             if (cpu_can_run(cpu)) {
                 int r;
 
+                /*
+                 * Release the BQL before executing guest code. This allows other
+                 * threads (e.g., the main thread handling QMP commands) to make
+                 * progress while guest instructions execute. Guest code execution
+                 * doesn't require the BQL since it doesn't access QEMU's internal
+                 * data structures. The BQL is re-acquired after execution to handle
+                 * any events, exceptions, or QEMU state updates.
+                 */
                 bql_unlock();
                 if (icount_enabled()) {
                     icount_prepare_for_run(cpu, cpu_budget);

@@ -861,6 +861,15 @@ void qmp_device_add(QDict *qdict, QObject **ret_data, Error **errp)
 {
     DeviceState *dev;
 
+    /*
+     * This function is called from the QMP dispatcher with the BQL held.
+     * Device creation and realization may take significant time, but vCPU
+     * threads can continue executing guest code during this time because
+     * they release the BQL before running guest instructions (see
+     * tcg-accel-ops-mttcg.c and tcg-accel-ops-rr.c). vCPUs will only block
+     * if they need to re-acquire the BQL to handle interrupts, MMIO, or
+     * other operations that access QEMU's internal state.
+     */
     dev = qdev_device_add_from_qdict(qdict, true, errp);
     if (!dev) {
         /*

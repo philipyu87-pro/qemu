@@ -89,6 +89,14 @@ static void *mttcg_cpu_thread_fn(void *arg)
 
         if (cpu_can_run(cpu)) {
             int r;
+            /*
+             * Release the BQL before executing guest code. This allows other
+             * threads (e.g., the main thread handling QMP commands) to make
+             * progress while this vCPU executes guest instructions. Guest code
+             * execution doesn't require the BQL since it doesn't access QEMU's
+             * internal data structures. The BQL is re-acquired after execution
+             * to handle any events, exceptions, or QEMU state updates.
+             */
             bql_unlock();
             r = tcg_cpu_exec(cpu);
             bql_lock();
