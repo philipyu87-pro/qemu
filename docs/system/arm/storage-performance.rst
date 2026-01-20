@@ -59,6 +59,13 @@ IOMMU/SMMU Settings
 
 On Kunpeng and other Arm platforms with SMMU, consider these boot parameters:
 
+.. warning::
+   The following parameters reduce security isolation between devices
+   and the host system. They should only be used when the performance
+   benefits are necessary and the security implications are understood.
+   In multi-tenant or security-sensitive environments, these settings
+   may not be appropriate.
+
 ``iommu.passthrough=1``
    Bypass IOMMU for all devices (improves performance but reduces isolation).
    Use with caution in production environments.
