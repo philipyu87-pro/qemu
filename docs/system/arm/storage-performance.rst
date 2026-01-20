@@ -225,3 +225,4 @@ See Also
 - :doc:`virt` - ARM virt machine documentation
 - :doc:`cpu-features` - ARM CPU feature configuration
 - :doc:`/devel/migration/uadk-compression` - UADK acceleration for Kunpeng
+- :doc:`storage-performance-zh` - 中文版本 (Chinese version)
