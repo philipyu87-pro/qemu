@@ -46,6 +46,18 @@ The experimental ``virtio-blk`` data-plane implementation has been benchmarked a
 shows these effects:
 ftp://public.dhe.ibm.com/linux/pdfs/KVM_Virtualized_IO_Performance_Paper.pdf
 
+Ceph/RBD considerations
+-----------------------
+Ceph ``librbd`` does most network and disk work in its own worker threads.
+When the Ceph cluster or network is the bottleneck (for example a single OSD
+or limited messenger threads), ``IOThread`` CPU usage will drop because it
+spends more time waiting for ``librbd`` completions.  This is often visible
+when adding a second VM: each ``IOThread`` becomes partially idle (e.g. ~50%)
+even though guest I/O rates stop scaling.  In such cases increasing Ceph
+parallelism (OSDs, messenger threads, queue depth) or provisioning additional
+network/CPU resources on the storage side is required; the QEMU ``IOThread``
+itself is not the limiting factor.
+
 .. _how-to-program:
 
 How to program for ``IOThread``\ s
