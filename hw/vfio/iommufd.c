@@ -992,9 +992,9 @@ VFIOIOMMUFDContainer *vfio_iommufd_pre_dma_map(IOMMUFDBackend *be,
 err_listener:
     iommufd_cdev_ram_block_discard_disable(false);
 err_discard:
-    vfio_address_space_put(space);
     iommufd_backend_free_id(be, ioas_id);
     object_unref(container);
+    vfio_address_space_put(space);
     return NULL;
 }
 
@@ -1002,6 +1002,14 @@ void vfio_iommufd_pre_dma_map_destroy(VFIOIOMMUFDContainer *container)
 {
     VFIOContainer *bcontainer = VFIO_IOMMU(container);
     VFIOAddressSpace *space = bcontainer->space;
+
+    /*
+     * If devices are still attached, the container will be destroyed
+     * when the last device detaches (via iommufd_cdev_container_destroy).
+     */
+    if (!QLIST_EMPTY(&bcontainer->device_list)) {
+        return;
+    }
 
     vfio_listener_unregister(bcontainer);
     iommufd_cdev_ram_block_discard_disable(false);

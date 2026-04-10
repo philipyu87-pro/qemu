@@ -6,6 +6,7 @@ vfio_ss.add(files(
   'container.c',
   'container-legacy.c',
   'helpers.c',
+  'pre-dma-map.c',
 ))
 vfio_ss.add(when: 'CONFIG_PSERIES', if_true: files('spapr.c'))
 vfio_ss.add(when: 'CONFIG_VFIO_PCI', if_true: files(
@@ -24,7 +25,6 @@ system_ss.add(when: 'CONFIG_VFIO', if_true: files(
   'device.c',
   'migration.c',
   'migration-multifd.c',
-  'pre-dma-map.c',
   'region.c',
 ))
 system_ss.add(when: ['CONFIG_VFIO', 'CONFIG_IOMMUFD'], if_true: files(
