@@ -451,6 +451,10 @@ static void iommufd_cdev_container_destroy(VFIOIOMMUFDContainer *container)
     if (!QLIST_EMPTY(&bcontainer->device_list)) {
         return;
     }
+    /* Don't destroy container while pre-DMA-map objects reference it */
+    if (bcontainer->pre_dma_map_count > 0) {
+        return;
+    }
     vfio_iommufd_cpr_unregister_container(container);
     vfio_listener_unregister(bcontainer);
     iommufd_backend_free_id(container->be, container->ioas_id);
@@ -933,6 +937,78 @@ static void hiod_iommufd_vfio_class_init(ObjectClass *oc, const void *data)
     idevc->attach_hwpt = host_iommu_device_iommufd_vfio_attach_hwpt;
     idevc->detach_hwpt = host_iommu_device_iommufd_vfio_detach_hwpt;
 };
+
+/*
+ * Pre-DMA-map support for iommufd path: create an iommufd container with
+ * IOAS, register the memory listener (triggering DMA maps), and return
+ * the container. When a VFIO device is later attached, iommufd_cdev_attach
+ * will find and reuse this container.
+ */
+VFIOIOMMUFDContainer *vfio_iommufd_pre_dma_map(IOMMUFDBackend *be,
+                                                AddressSpace *as,
+                                                Error **errp)
+{
+    VFIOIOMMUFDContainer *container;
+    VFIOContainer *bcontainer;
+    VFIOAddressSpace *space;
+    uint32_t ioas_id;
+    Error *err = NULL;
+    int ret;
+
+    if (!iommufd_backend_alloc_ioas(be, &ioas_id, errp)) {
+        return NULL;
+    }
+
+    container = VFIO_IOMMU_IOMMUFD(object_new(TYPE_VFIO_IOMMU_IOMMUFD));
+    container->be = be;
+    container->ioas_id = ioas_id;
+    QLIST_INIT(&container->hwpt_list);
+
+    bcontainer = VFIO_IOMMU(container);
+    space = vfio_address_space_get(as);
+    vfio_address_space_insert(space, bcontainer);
+
+    ret = iommufd_cdev_ram_block_discard_disable(true);
+    if (ret) {
+        error_setg_errno(errp, -ret, "Cannot set discarding of RAM broken");
+        goto err_discard;
+    }
+
+    if (!iommufd_cdev_get_info_iova_range(container, ioas_id, &err)) {
+        error_append_hint(&err,
+                   "Fallback to default 64bit IOVA range and 4K page size\n");
+        warn_report_err(err);
+        err = NULL;
+        bcontainer->pgsizes = qemu_real_host_page_size();
+    }
+
+    if (!vfio_listener_register(bcontainer, errp)) {
+        goto err_listener;
+    }
+
+    bcontainer->initialized = true;
+    return container;
+
+err_listener:
+    iommufd_cdev_ram_block_discard_disable(false);
+err_discard:
+    vfio_address_space_put(space);
+    iommufd_backend_free_id(be, ioas_id);
+    object_unref(container);
+    return NULL;
+}
+
+void vfio_iommufd_pre_dma_map_destroy(VFIOIOMMUFDContainer *container)
+{
+    VFIOContainer *bcontainer = VFIO_IOMMU(container);
+    VFIOAddressSpace *space = bcontainer->space;
+
+    vfio_listener_unregister(bcontainer);
+    iommufd_cdev_ram_block_discard_disable(false);
+    iommufd_backend_free_id(container->be, container->ioas_id);
+    object_unref(container);
+    vfio_address_space_put(space);
+}
 
 static const TypeInfo types[] = {
     {

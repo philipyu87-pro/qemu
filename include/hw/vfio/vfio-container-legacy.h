@@ -24,6 +24,7 @@ typedef struct VFIOGroup {
     QLIST_ENTRY(VFIOGroup) next;
     QLIST_ENTRY(VFIOGroup) container_next;
     bool ram_block_discard_allowed;
+    int pre_dma_map_count; /* reference count from pre-DMA-map objects */
 } VFIOGroup;
 
 struct VFIOLegacyContainer {
@@ -35,5 +36,13 @@ struct VFIOLegacyContainer {
     QLIST_HEAD(, VFIOGroup) group_list;
     VFIOContainerCPR cpr;
 };
+
+/*
+ * Pre-DMA-map support: create VFIO group/container and register memory
+ * listener early (at VM startup), so DMA maps are already in place when
+ * a VFIO device is later hot-plugged.
+ */
+VFIOGroup *vfio_legacy_group_get(int groupid, AddressSpace *as, Error **errp);
+void vfio_legacy_group_put(VFIOGroup *group);
 
 #endif /* HW_VFIO_CONTAINER_LEGACY_H */

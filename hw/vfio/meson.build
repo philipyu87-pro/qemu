@@ -24,6 +24,7 @@ system_ss.add(when: 'CONFIG_VFIO', if_true: files(
   'device.c',
   'migration.c',
   'migration-multifd.c',
+  'pre-dma-map.c',
   'region.c',
 ))
 system_ss.add(when: ['CONFIG_VFIO', 'CONFIG_IOMMUFD'], if_true: files(

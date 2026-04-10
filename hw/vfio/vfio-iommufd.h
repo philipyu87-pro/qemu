@@ -32,4 +32,12 @@ struct VFIOIOMMUFDContainer {
 
 OBJECT_DECLARE_SIMPLE_TYPE(VFIOIOMMUFDContainer, VFIO_IOMMU_IOMMUFD);
 
+/*
+ * Pre-DMA-map support: create container and register listener early.
+ */
+VFIOIOMMUFDContainer *vfio_iommufd_pre_dma_map(IOMMUFDBackend *be,
+                                                AddressSpace *as,
+                                                Error **errp);
+void vfio_iommufd_pre_dma_map_destroy(VFIOIOMMUFDContainer *container);
+
 #endif /* HW_VFIO_VFIO_IOMMUFD_H */

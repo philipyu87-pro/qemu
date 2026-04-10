@@ -820,9 +820,23 @@ free_group_exit:
     return NULL;
 }
 
+/*
+ * Exported wrapper for vfio_group_get, used by the pre-DMA-map feature
+ * to create VFIO groups/containers and register memory listeners early.
+ */
+VFIOGroup *vfio_legacy_group_get(int groupid, AddressSpace *as, Error **errp)
+{
+    return vfio_group_get(groupid, as, errp);
+}
+
 static void vfio_group_put(VFIOGroup *group)
 {
     if (!group || !QLIST_EMPTY(&group->device_list)) {
+        return;
+    }
+
+    /* Don't release the group while pre-DMA-map objects reference it */
+    if (group->pre_dma_map_count > 0) {
         return;
     }
 
@@ -836,6 +850,14 @@ static void vfio_group_put(VFIOGroup *group)
     cpr_delete_fd("vfio_group", group->groupid);
     close(group->fd);
     g_free(group);
+}
+
+/*
+ * Exported wrapper for vfio_group_put, used by the pre-DMA-map feature.
+ */
+void vfio_legacy_group_put(VFIOGroup *group)
+{
+    vfio_group_put(group);
 }
 
 static bool vfio_device_get(VFIOGroup *group, const char *name,

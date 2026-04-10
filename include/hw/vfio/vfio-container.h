@@ -52,6 +52,7 @@ struct VFIOContainer {
     QLIST_HEAD(, VFIODevice) device_list;
     GList *iova_ranges;
     NotifierWithReturn cpr_reboot_notifier;
+    int pre_dma_map_count; /* reference count from pre-DMA-map objects */
 };
 
 #define TYPE_VFIO_IOMMU "vfio-iommu"
