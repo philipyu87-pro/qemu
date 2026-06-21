@@ -980,12 +980,24 @@ out:
     return r;
 }
 
+/* Mark the IDE state with an abort error condition. */
+static void ahci_set_abort_error(IDEState *ide_state)
+{
+    ide_state->error = ABRT_ERR;
+    ide_state->status = READY_STAT | ERR_STAT;
+}
+
+static int ahci_get_valid_busy_slot(const AHCIDevice *ad)
+{
+    return (ad->busy_slot >= 0 && ad->busy_slot < AHCI_MAX_CMDS) ?
+        ad->busy_slot : -1;
+}
+
 static void ncq_err(NCQTransferState *ncq_tfs)
 {
     IDEState *ide_state = &ncq_tfs->drive->port.ifs[0];
 
-    ide_state->error = ABRT_ERR;
-    ide_state->status = READY_STAT | ERR_STAT;
+    ahci_set_abort_error(ide_state);
     qemu_sglist_destroy(&ncq_tfs->sglist);
     ncq_tfs->used = 0;
 }
@@ -1192,6 +1204,28 @@ static AHCICmdHdr *get_cmd_header(AHCIState *s, uint8_t port, uint8_t slot)
     return s->dev[port].lst ? &((AHCICmdHdr *)s->dev[port].lst)[slot] : NULL;
 }
 
+/*
+ * Ensure a valid command header is present, reloading it from busy_slot if
+ * needed. Returns false after logging if no valid header can be recovered.
+ */
+static bool ahci_ensure_cur_cmd(AHCIDevice *ad)
+{
+    int slot = ahci_get_valid_busy_slot(ad);
+
+    if (!ad->cur_cmd && slot >= 0) {
+        ad->cur_cmd = get_cmd_header(ad->hba, ad->port_no, slot);
+    }
+
+    if (!ad->cur_cmd) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "ahci: missing cur_cmd for port %d slot %d (busy %d)\n",
+                      ad->port_no, slot, ad->busy_slot);
+        return false;
+    }
+
+    return true;
+}
+
 static void handle_reg_h2d_fis(AHCIState *s, int port,
                                uint8_t slot, const uint8_t *cmd_fis)
 {
@@ -1374,6 +1408,10 @@ static void ahci_pio_transfer(const IDEDMA *dma)
     IDEState *s = &ad->port.ifs[0];
     uint32_t size = (uint32_t)(s->data_end - s->data_ptr);
     /* write == ram -> device */
+    if (!ahci_ensure_cur_cmd(ad)) {
+        ahci_set_abort_error(s);
+        return;
+    }
     uint16_t opts = le16_to_cpu(ad->cur_cmd->opts);
     int is_write = opts & AHCI_CMD_WRITE;
     int is_atapi = opts & AHCI_CMD_ATAPI;
@@ -1469,6 +1507,11 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
     IDEState *s = &ad->port.ifs[0];
 
+    if (!ahci_ensure_cur_cmd(ad)) {
+        ahci_set_abort_error(s);
+        return -1;
+    }
+
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd,
                              limit, s->io_buffer_offset) == -1) {
         trace_ahci_dma_prepare_buf_fail(ad->hba, ad->port_no);
@@ -1489,6 +1532,11 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
 {
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
 
+    if (!ahci_ensure_cur_cmd(ad)) {
+        ahci_set_abort_error(&ad->port.ifs[0]);
+        return;
+    }
+
     tx_bytes += le32_to_cpu(ad->cur_cmd->status);
     ad->cur_cmd->status = cpu_to_le32(tx_bytes);
 }
@@ -1499,6 +1547,11 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
     IDEState *s = &ad->port.ifs[0];
     uint8_t *p = s->io_buffer + s->io_buffer_index;
     int l = s->io_buffer_size - s->io_buffer_index;
+
+    if (!ahci_ensure_cur_cmd(ad)) {
+        ahci_set_abort_error(s);
+        return 0;
+    }
 
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd, l, s->io_buffer_offset)) {
         return 0;
